@@ -16,8 +16,20 @@ export const metadata: Metadata = {
     siteName: "MealMargin",
     locale: "en_IN",
     type: "website",
+    images: [{ url: "/icon.png", width: 512, height: 512, alt: "MealMargin" }],
   },
-  icons: { icon: "/panda-mark.svg" },
+  // All four are crops of the same source tile (see public/README-icons.md).
+  // Declared explicitly rather than relying on file-convention icons, because
+  // the 32px favicon needs to be a separate downscale — letting the browser
+  // shrink the 512 turns the plate into mush in a tab strip.
+  icons: {
+    icon: [
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
