@@ -1,0 +1,36 @@
+{
+  // Build with `next build --webpack` (see package.json). Turbopack output is
+  // not fully supported by @opennextjs/cloudflare — the deploy succeeds and
+  // then every route 500s with "ChunkLoadError: Failed to load chunk ... from
+  // runtime" at request time. RentVault hit this in production 2026-07-21.
+  //
+  // Do NOT add a src/proxy.ts or middleware: the adapter can't bundle it
+  // (Node-only `async_hooks`). See CLAUDE.md.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mealmargin-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  // wrangler creates and maintains the DNS record for a custom_domain route
+  // itself — do NOT also add a manual record for this hostname in the
+  // Cloudflare dashboard.
+  "routes": [
+    {
+      "pattern": "mealmargin.3pandalabs.com",
+      "custom_domain": true
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "NEXT_PUBLIC_SITE_URL": "https://mealmargin.3pandalabs.com"
+    // METRICS_TOKEN is deliberately absent: it is a secret, set with
+    // `wrangler secret put METRICS_TOKEN`. GET /metrics answers 503 while it is
+    // unset, so a missing ops secret can never brick a deploy.
+  }
+}
