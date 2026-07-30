@@ -1,27 +1,31 @@
+import { Comparison } from "@/components/Comparison";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
-import { Optimizer } from "@/components/Optimizer";
+import { ComparisonProvider } from "@/context/ComparisonContext";
 
-// Single route, single page. The whole app is the client component below; this
-// file exists to render the static chrome around it on the server.
+// Single route, single page. Everything interactive lives under the provider;
+// this file renders the static chrome around it on the server.
 export default function HomePage() {
   return (
     <>
       <Header />
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
         <div className="mb-6 max-w-3xl">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            The same order, priced three ways
+            The same meal, priced four ways
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-muted sm:text-base">
-            One kitchen, one cart, three checkouts. Swiggy and Zomato add roughly 26-28% commission
-            to the menu before a single fee lands; the ONDC network takes 3-5% but nobody
-            subsidises the rider. Which one is actually cheaper depends on your cart size, your
-            distance, the hour, your membership and the card in your wallet — so change those below
-            and watch the answer move.
+            Say where you are and what you want to eat. MealMargin prices that exact basket at every
+            kitchen near you that serves all of it — on Swiggy, on Zomato, on the ONDC network, and
+            at the counter if you fetch it yourself. Swiggy and Zomato bake roughly 26-28%
+            commission into the menu before a single fee lands; ONDC takes 3-5%; the counter takes
+            none. Walking in is usually the cheapest thing you can do, and this shows you by exactly
+            how much.
           </p>
         </div>
-        <Optimizer />
+        <ComparisonProvider>
+          <Comparison />
+        </ComparisonProvider>
       </main>
       <Footer />
     </>

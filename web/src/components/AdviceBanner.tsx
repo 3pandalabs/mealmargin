@@ -1,14 +1,14 @@
 "use client";
 
-import { Lightbulb, Scale, Sparkles } from "lucide-react";
+import { Lightbulb, Sparkles } from "lucide-react";
 import type { Advice } from "@/lib/recommend";
 import { cn } from "@/lib/format";
 
-// The one thing to read if you read nothing else: which column to tap, why, and
+// The one thing to read if you read nothing else: where to buy it, why, and
 // what would have to change for the answer to change.
 
 export function AdviceBanner({ advice }: { advice: Advice }) {
-  const Icon = advice.tone === "win" ? Sparkles : advice.tone === "tie" ? Scale : Lightbulb;
+  const Icon = advice.tone === "win" ? Sparkles : Lightbulb;
 
   return (
     <div
