@@ -1,229 +1,335 @@
-import { BANKS, PLATFORM_BY_ID } from "./platforms";
-import { quoteAll, type Quote, type QuoteContext } from "./pricing";
+import { CHANNEL_BY_ID, DRIVE_MINUTES_PER_KM, WALK_MINUTES_PER_KM } from "./channels";
+import { BANKS } from "./channels";
+import { quoteAll, resolveLines, servesAll, type Quote, type ResolvedLine } from "./pricing";
 import { rupees } from "./format";
-import type { PlatformId } from "./types";
+import { restaurantsIn } from "./restaurants";
+import type { BankId, CartLine, ChannelId, Fulfillment, Restaurant } from "./types";
 
-// Turns a set of quotes into the two things a person actually wants: which
-// column to tap, and why the answer would be different for a different cart.
+// Turns a locality plus a meal into the two things a person actually wants:
+// where to buy it, and how much walking there instead saves.
 
-export interface Ranked {
+/** Beyond this, "walk there" stops being advice and starts being a joke. */
+const WALKABLE_KM = 2.5;
+
+export interface Preferences {
+  fulfillment: Fulfillment;
+  peak: boolean;
+  memberships: Record<ChannelId, boolean>;
+  banks: BankId[];
+  usePromos: boolean;
+}
+
+export interface RestaurantResult {
+  restaurant: Restaurant;
+  /** This kitchen's own prices for the meal. Kept on the result because the
+   *  cart-size sweep and the membership-breakeven check both need to re-quote
+   *  the same basket, and re-deriving them from the restaurant twice invites
+   *  the two paths to drift. */
+  lines: ResolvedLine[];
+  /** All four channels, in fixed order, priced for the chosen fulfillment. */
   quotes: Quote[];
-  available: Quote[];
+  /** Available ones, cheapest first. */
+  ranked: Quote[];
   best?: Quote;
-  runnerUp?: Quote;
-  worst?: Quote;
-  /** Best vs worst available column — the headline number. */
-  spread: number;
-  spreadPercent: number;
+  /** Cheapest channel that will actually bring it to you. */
+  bestDelivered?: Quote;
+  /** Cost of collecting it yourself. */
+  pickup?: Quote;
+  pickupSaving: number;
+  pickupSavingPercent: number;
+  walkMinutes: number;
+  driveMinutes: number;
+  /** Whether suggesting the walk is sensible at all. A 3.8 km kitchen is a
+   *  46-minute walk — true, and useless as advice, so the UI shows the drive
+   *  instead rather than quoting a number nobody will act on. */
+  walkable: boolean;
 }
 
-export function rank(quotes: Quote[]): Ranked {
-  const available = quotes.filter((q) => q.available).sort((a, b) => a.total - b.total);
-  const best = available[0];
-  const runnerUp = available[1];
-  const worst = available[available.length - 1];
-  const spread = best && worst ? worst.total - best.total : 0;
-  const spreadPercent = worst && worst.total > 0 ? (spread / worst.total) * 100 : 0;
-  return { quotes, available, best, runnerUp, worst, spread, spreadPercent };
+export interface BestChoice {
+  restaurant: Restaurant;
+  quote: Quote;
 }
-
-export interface CrossoverSegment {
-  fromSubtotal: number;
-  toSubtotal: number;
-  winner: PlatformId;
-}
-
-export const SWEEP_MIN = 100;
-export const SWEEP_MAX = 2400;
-const SWEEP_STEP = 20;
-/** Bands narrower than this are coupon-threshold noise, not advice. */
-const MIN_BAND = SWEEP_STEP * 4;
-
-/**
- * Slides the cart value across a range, keeping the composition fixed, and
- * records which platform wins in each band. This is what turns "ONDC is
- * cheaper" into "ONDC is cheaper below ₹430", which is the only form of that
- * claim that is actually true.
- */
-export function crossoverSegments(ctx: QuoteContext): CrossoverSegment[] {
-  if (ctx.itemCount === 0 || ctx.baseSubtotal <= 0) return [];
-
-  const packagingPerRupee = ctx.packagingBase / ctx.baseSubtotal;
-  const segments: CrossoverSegment[] = [];
-
-  for (let subtotal = SWEEP_MIN; subtotal <= SWEEP_MAX; subtotal += SWEEP_STEP) {
-    const probe: QuoteContext = {
-      ...ctx,
-      baseSubtotal: subtotal,
-      packagingBase: Math.round(subtotal * packagingPerRupee),
-    };
-    const winner = rank(quoteAll(probe)).best?.platform.id;
-    if (!winner) continue;
-
-    const last = segments[segments.length - 1];
-    if (last && last.winner === winner) {
-      last.toSubtotal = subtotal;
-    } else {
-      segments.push({ fromSubtotal: last?.toSubtotal ?? SWEEP_MIN, toSubtotal: subtotal, winner });
-    }
-  }
-
-  if (segments.length > 0) segments[segments.length - 1].toSubtotal = SWEEP_MAX;
-  return smooth(segments);
-}
-
-/**
- * Coupon minimums make the raw sweep flicker: a platform can win a single ₹20
- * step and lose the next. Absorbing those slivers into whichever neighbour is
- * wider keeps the bands contiguous — which matters, because the crossover bar
- * renders them as adjacent widths and a gap would draw as a hole.
- */
-function smooth(input: CrossoverSegment[]): CrossoverSegment[] {
-  const segments = input.map((segment) => ({ ...segment }));
-
-  for (;;) {
-    if (segments.length < 2) break;
-    let narrowest = 0;
-    for (let i = 1; i < segments.length; i += 1) {
-      if (width(segments[i]) < width(segments[narrowest])) narrowest = i;
-    }
-    if (width(segments[narrowest]) >= MIN_BAND) break;
-
-    const before = segments[narrowest - 1];
-    const after = segments[narrowest + 1];
-    const target =
-      !before ? after : !after ? before : width(after) > width(before) ? after : before;
-    target.fromSubtotal = Math.min(target.fromSubtotal, segments[narrowest].fromSubtotal);
-    target.toSubtotal = Math.max(target.toSubtotal, segments[narrowest].toSubtotal);
-    segments.splice(narrowest, 1);
-  }
-
-  // Absorption can leave two neighbours with the same winner.
-  return segments.reduce<CrossoverSegment[]>((acc, segment) => {
-    const last = acc[acc.length - 1];
-    if (last && last.winner === segment.winner) last.toSubtotal = segment.toSubtotal;
-    else acc.push(segment);
-    return acc;
-  }, []);
-}
-
-const width = (segment: CrossoverSegment) => segment.toSubtotal - segment.fromSubtotal;
 
 export interface Advice {
-  tone: "win" | "tie" | "info";
+  tone: "win" | "info";
   headline: string;
   detail: string;
-  /** Extra lines: membership breakeven, stacking losses, unlisted platforms. */
   footnotes: string[];
 }
 
-/** `segments` is passed in rather than recomputed: the caller already needs it
- *  for the crossover bar, and the sweep is the most expensive thing here. */
-export function buildAdvice(ctx: QuoteContext, ranked: Ranked, segments: CrossoverSegment[]): Advice {
+export interface Comparison {
+  results: RestaurantResult[];
+  /** Kitchens in this locality that do not serve the whole meal. */
+  skipped: { restaurant: Restaurant; missing: string[] }[];
+  best?: BestChoice;
+  /** Best vs worst across every kitchen and channel — the headline number. */
+  spread: number;
+  advice: Advice;
+}
+
+function scaleLines(lines: ResolvedLine[], factor: number): ResolvedLine[] {
+  return lines.map((line) => ({
+    ...line,
+    counterPrice: Math.round(line.counterPrice * factor),
+    packagingCost: Math.round(line.packagingCost * factor),
+  }));
+}
+
+function evaluate(
+  restaurant: Restaurant,
+  lines: ResolvedLine[],
+  prefs: Preferences,
+): RestaurantResult {
+  const base = {
+    restaurant,
+    lines,
+    peak: prefs.peak,
+    memberships: prefs.memberships,
+    banks: prefs.banks,
+    usePromos: prefs.usePromos,
+  };
+
+  const quotes = quoteAll({ ...base, fulfillment: prefs.fulfillment });
+  const ranked = quotes.filter((quote) => quote.available).sort((a, b) => a.total - b.total);
+
+  // The savings card always compares like for like: cheapest *delivered* under
+  // delivery pricing against the counter. Computing it from whatever mode the
+  // UI happens to be in would make the number jump when you flip the toggle,
+  // which is exactly when someone is looking at it.
+  const deliveryQuotes = quoteAll({ ...base, fulfillment: "delivery" });
+  const bestDelivered = deliveryQuotes
+    .filter((quote) => quote.available && quote.channel.supportsDelivery)
+    .sort((a, b) => a.total - b.total)[0];
+  const pickup = deliveryQuotes.find((quote) => quote.channel.id === "pickup" && quote.available);
+
+  const pickupSaving = bestDelivered && pickup ? bestDelivered.total - pickup.total : 0;
+  const pickupSavingPercent =
+    bestDelivered && bestDelivered.total > 0 ? (pickupSaving / bestDelivered.total) * 100 : 0;
+
+  return {
+    restaurant,
+    lines,
+    quotes,
+    ranked,
+    best: ranked[0],
+    bestDelivered,
+    pickup,
+    pickupSaving,
+    pickupSavingPercent,
+    walkMinutes: Math.round(restaurant.distanceKm * WALK_MINUTES_PER_KM),
+    driveMinutes: Math.max(3, Math.round(restaurant.distanceKm * DRIVE_MINUTES_PER_KM)),
+    walkable: restaurant.distanceKm <= WALKABLE_KM,
+  };
+}
+
+export function compare(
+  localityId: string,
+  cart: CartLine[],
+  prefs: Preferences,
+): Comparison {
+  const kitchens = restaurantsIn(localityId);
+  const lines = cart.filter((line) => line.quantity > 0);
+
+  if (lines.length === 0) {
+    return {
+      results: [],
+      skipped: [],
+      spread: 0,
+      advice: {
+        tone: "info",
+        headline: "Build your meal",
+        detail:
+          "Add the dishes you actually want — say one kadhai paneer and three tandoori roti — and every kitchen near you that serves all of them gets priced four ways.",
+        footnotes: [],
+      },
+    };
+  }
+
+  const results: RestaurantResult[] = [];
+  const skipped: { restaurant: Restaurant; missing: string[] }[] = [];
+
+  for (const restaurant of kitchens) {
+    if (!servesAll(restaurant, lines)) {
+      const missing = lines
+        .filter((line) => !restaurant.menu.some((entry) => entry.dishId === line.dishId))
+        .map((line) => line.dishId);
+      skipped.push({ restaurant, missing });
+      continue;
+    }
+    const resolved = resolveLines(restaurant, lines);
+    if (!resolved) continue;
+    results.push(evaluate(restaurant, resolved, prefs));
+  }
+
+  results.sort((a, b) => (a.best?.total ?? Infinity) - (b.best?.total ?? Infinity));
+
+  const everyTotal = results.flatMap((result) => result.ranked.map((quote) => quote.total));
+  const spread = everyTotal.length > 1 ? Math.max(...everyTotal) - Math.min(...everyTotal) : 0;
+
+  const topResult = results[0];
+  const best: BestChoice | undefined =
+    topResult && topResult.best ? { restaurant: topResult.restaurant, quote: topResult.best } : undefined;
+
+  return {
+    results,
+    skipped,
+    best,
+    spread,
+    advice: buildAdvice(results, best, spread, prefs),
+  };
+}
+
+/**
+ * Fixed per-order fees are a bigger share of a small bill than a large one, so
+ * "pickup saves you X%" is only true at a given cart size. This re-prices the
+ * same meal at a smaller and a larger value to say so honestly, rather than
+ * quoting one percentage as if it were a constant.
+ */
+function savingPercentAt(result: RestaurantResult, targetSubtotal: number, prefs: Preferences): number {
+  const actual = result.pickup?.counterSubtotal ?? 0;
+  if (actual <= 0) return 0;
+  const scaled = scaleLines(result.lines, targetSubtotal / actual);
+  if (scaled.length === 0) return 0;
+
+  const base = {
+    restaurant: result.restaurant,
+    lines: scaled,
+    peak: prefs.peak,
+    memberships: prefs.memberships,
+    banks: prefs.banks,
+    usePromos: prefs.usePromos,
+    fulfillment: "delivery" as const,
+  };
+  const quotes = quoteAll(base);
+  const delivered = quotes
+    .filter((quote) => quote.available && quote.channel.supportsDelivery)
+    .sort((a, b) => a.total - b.total)[0];
+  const pickup = quotes.find((quote) => quote.channel.id === "pickup" && quote.available);
+  if (!delivered || !pickup || delivered.total === 0) return 0;
+  return ((delivered.total - pickup.total) / delivered.total) * 100;
+}
+
+function buildAdvice(
+  results: RestaurantResult[],
+  best: BestChoice | undefined,
+  spread: number,
+  prefs: Preferences,
+): Advice {
   const footnotes: string[] = [];
 
-  if (ctx.itemCount === 0) {
+  if (results.length === 0 || !best) {
     return {
       tone: "info",
-      headline: "Add something to the cart",
+      headline: "No kitchen near you serves that whole meal",
       detail:
-        "Fees are per-order, not per-item, so the cheapest platform genuinely changes with cart size. Pick a dish and the three columns will fill in.",
+        "Every comparison here prices the complete basket at one kitchen, because splitting an order across two restaurants means paying two sets of fees. Drop an item, or try another locality.",
       footnotes: [],
     };
   }
 
-  const { best, runnerUp, spread } = ranked;
-  if (!best) {
-    return {
-      tone: "info",
-      headline: "Nothing to compare",
-      detail: "This restaurant is not listed on any of the three channels.",
-      footnotes: [],
-    };
-  }
+  const top = results[0];
+  const channelName =
+    best.quote.channel.id === "pickup" ? "collecting it yourself" : `${best.quote.channel.name}`;
 
-  // What actually won it: name the mechanism, not just the platform.
   const reasons: string[] = [];
-  if (best.platform.id === "ondc") {
+  if (best.quote.channel.id === "pickup") {
     reasons.push(
-      `its menu price is ${rupees(
-        (runnerUp?.menuSubtotal ?? best.menuSubtotal) - best.menuSubtotal,
-      )} lower before a single discount, because the network takes ${Math.round(
-        best.platform.commission * 100,
-      )}% instead of ~26-28%`,
+      `no commission inside the price, no platform fee and no rider — ${rupees(
+        top.pickupSaving,
+      )} less than having it delivered`,
     );
-  }
-  if (best.deliveryWaived) reasons.push(`delivery is waived by ${best.platform.membership?.name}`);
-  if (best.couponDiscount > 0 && best.appliedCoupon)
-    reasons.push(`${best.appliedCoupon.code} takes off ${rupees(best.couponDiscount)}`);
-  if (best.memberDiscount > 0) reasons.push(`the member discount takes off ${rupees(best.memberDiscount)}`);
-  if (best.bankDiscount > 0 && best.appliedBank) {
-    const bankName = BANKS.find((bank) => bank.id === best.appliedBank?.bank)?.short ?? "card";
-    reasons.push(`your ${bankName} offer adds ${rupees(best.bankDiscount)}`);
+  } else {
+    if (best.quote.deliveryWaived)
+      reasons.push(`delivery is waived by ${best.quote.channel.membership?.name}`);
+    if (best.quote.couponDiscount > 0 && best.quote.appliedCoupon)
+      reasons.push(`${best.quote.appliedCoupon.code} takes off ${rupees(best.quote.couponDiscount)}`);
+    if (best.quote.memberDiscount > 0)
+      reasons.push(`the member discount takes off ${rupees(best.quote.memberDiscount)}`);
+    if (best.quote.bankDiscount > 0 && best.quote.appliedBank) {
+      const bank = BANKS.find((entry) => entry.id === best.quote.appliedBank?.bank)?.short ?? "card";
+      reasons.push(`your ${bank} offer adds ${rupees(best.quote.bankDiscount)}`);
+    }
   }
 
-  // The widest losing band, not the first — the first can be a sliver near the
-  // bottom of the sweep, which is true but not useful.
-  const otherBand = segments
-    .filter((s) => s.winner !== best.platform.id)
-    .sort((a, b) => b.toSubtotal - b.fromSubtotal - (a.toSubtotal - a.fromSubtotal))[0];
-  if (otherBand) {
-    const otherName = PLATFORM_BY_ID[otherBand.winner].name;
-    const band =
-      otherBand.fromSubtotal <= SWEEP_MIN
-        ? `under ${rupees(otherBand.toSubtotal)}`
-        : otherBand.toSubtotal >= SWEEP_MAX
-          ? `above ${rupees(otherBand.fromSubtotal)}`
-          : `between ${rupees(otherBand.fromSubtotal)} and ${rupees(otherBand.toSubtotal)}`;
+  // Pickup economics, stated at two cart sizes so the percentage is honest.
+  const bestPickup = [...results].sort((a, b) => b.pickupSavingPercent - a.pickupSavingPercent)[0];
+  if (bestPickup && bestPickup.pickupSaving > 0) {
+    const small = savingPercentAt(bestPickup, 250, prefs);
+    const large = savingPercentAt(bestPickup, 1200, prefs);
+    if (small > 0 && large > 0) {
+      footnotes.push(
+        `Fees hit small orders hardest: at ${bestPickup.restaurant.name}, collecting yourself saves about ${Math.round(
+          small,
+        )}% on a ₹250 basket but only ${Math.round(
+          large,
+        )}% on a ₹1,200 one — the platform and delivery fees are flat, so they matter less the more food you buy.`,
+      );
+    }
     footnotes.push(
-      `Cart-size flip: ${otherName} wins ${band} of menu value — fixed per-order fees dominate a small cart, capped percentage discounts dominate a large one.`,
+      `Best pickup deal nearby: ${bestPickup.restaurant.name}, ${rupees(
+        bestPickup.pickupSaving,
+      )} saved (${Math.round(bestPickup.pickupSavingPercent)}%) — ${bestPickup.restaurant.distanceKm} km, ${
+        bestPickup.walkable
+          ? `about ${bestPickup.walkMinutes} min on foot`
+          : `about ${bestPickup.driveMinutes} min to drive`
+      }.`,
     );
   }
 
-  for (const quote of ranked.quotes) {
-    if (!quote.available) footnotes.push(`${quote.unavailableReason}.`);
-    if (quote.promoRunnerUp) footnotes.push(`${quote.platform.name}: dropped ${quote.promoRunnerUp}.`);
+  // The opposite case, and worth saying outright rather than showing a negative
+  // saving: a large enough app coupon really can beat the counter.
+  const couponBeatsCounter = results.filter((result) => result.pickupSaving < 0);
+  if (prefs.usePromos && couponBeatsCounter.length > 0 && best.quote.channel.id !== "pickup") {
+    footnotes.push(
+      `At ${couponBeatsCounter.length} of these kitchens an app promo currently beats the counter — that is what a capped percentage coupon does to a small bill. Switch promo codes off to see the structural comparison without one.`,
+    );
   }
 
-  // Membership breakeven, but only when the pass is currently switched off —
-  // otherwise it is advice about a decision already made.
-  for (const quote of ranked.available) {
-    const membership = quote.platform.membership;
-    if (!membership || ctx.memberships[quote.platform.id]) continue;
+  for (const quote of top.quotes) {
+    if (!quote.available && quote.unavailableReason) footnotes.push(`${quote.unavailableReason}.`);
+    if (quote.promoRunnerUp) footnotes.push(`${quote.channel.name}: dropped ${quote.promoRunnerUp}.`);
+  }
+
+  // Membership breakeven, but only for a pass that is currently switched off.
+  for (const quote of top.ranked) {
+    const membership = quote.channel.membership;
+    if (!membership || prefs.memberships[quote.channel.id]) continue;
     const withMember = quoteAll({
-      ...ctx,
-      memberships: { ...ctx.memberships, [quote.platform.id]: true },
-    }).find((q) => q.platform.id === quote.platform.id);
+      restaurant: top.restaurant,
+      lines: top.lines,
+      fulfillment: prefs.fulfillment,
+      peak: prefs.peak,
+      banks: prefs.banks,
+      usePromos: prefs.usePromos,
+      memberships: { ...prefs.memberships, [quote.channel.id]: true },
+    }).find((entry) => entry.channel.id === quote.channel.id);
     if (!withMember) continue;
     const saving = quote.total - withMember.total;
     if (saving > 0) {
+      const orders = Math.ceil(membership.monthlyCost / saving);
       footnotes.push(
-        `${membership.name} would save ${rupees(saving)} on this order alone; the pass costs ${rupees(
+        `${membership.name} would save ${rupees(saving)} on this order; the pass costs ${rupees(
           membership.monthlyCost,
-        )}/month, so it pays for itself in ${Math.ceil(membership.monthlyCost / saving)} order${
-          Math.ceil(membership.monthlyCost / saving) === 1 ? "" : "s"
-        } like this one.`,
+        )}/month, so it pays for itself in ${orders} order${orders === 1 ? "" : "s"} like this one.`,
       );
     }
   }
 
-  if (spread <= 5) {
-    return {
-      tone: "tie",
-      headline: `All three land within ${rupees(spread)} — order wherever you like`,
-      detail:
-        "At this cart value the commission gap and the fee structures cancel out. Pick on delivery time or restaurant rating instead of price.",
-      footnotes,
-    };
-  }
-
   return {
     tone: "win",
-    headline: `${best.platform.name} wins by ${rupees(spread)} — pay ${rupees(best.total)}`,
+    headline: `${best.restaurant.name} — ${rupees(best.quote.total)} ${
+      best.quote.channel.id === "pickup" ? "if you collect it" : `via ${best.quote.channel.name}`
+    }`,
     detail:
       reasons.length > 0
-        ? `On a cart of ${rupees(ctx.baseSubtotal)} at the kitchen's own prices, ${reasons.join("; ")}.`
-        : `On a cart of ${rupees(ctx.baseSubtotal)} at the kitchen's own prices, it is simply the cheapest checkout once fees and taxes land.`,
+        ? `Cheapest of ${results.length} kitchen${results.length === 1 ? "" : "s"} nearby, ${rupees(
+            spread,
+          )} below the dearest way to buy the same meal. It wins because ${reasons.join("; ")}.`
+        : `Cheapest of ${results.length} kitchen${
+            results.length === 1 ? "" : "s"
+          } nearby by ${channelName}, ${rupees(spread)} below the dearest way to buy the same meal.`,
     footnotes,
   };
 }
+
+export { CHANNEL_BY_ID };

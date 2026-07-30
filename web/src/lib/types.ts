@@ -1,91 +1,115 @@
 // Shared domain types for the whole app.
 //
 // Everything here describes a *simulation*. There is no API and no scraping:
-// the numbers in src/lib/platforms.ts and src/lib/restaurants.ts are
-// hand-modelled from publicly reported fee structures (see the comments there),
-// and the engine in src/lib/pricing.ts is a pure function over them. That means
-// every figure the UI shows can be traced back to a constant in this folder.
+// the numbers in channels.ts / dishes.ts / restaurants.ts are hand-modelled
+// from publicly reported fee structures, and the engine in pricing.ts is a pure
+// function over them. Every figure the UI shows traces back to a constant in
+// this folder.
+//
+// v2 (2026-07-30) turned the model inside out. v1 asked "given this restaurant,
+// which app is cheapest?"; v2 asks the question people actually have: "I am
+// here, I want this meal — where and how do I buy it for the least money?"
+// That means a locality comes first, a dish is a *canonical* thing that many
+// kitchens sell, and walking to the counter is a fourth channel rather than an
+// afterthought.
 
-export type PlatformId = "swiggy" | "zomato" | "ondc";
+export type ChannelId = "swiggy" | "zomato" | "ondc" | "pickup";
+
+/** Delivery brings rider fees and surge; pickup removes them everywhere. */
+export type Fulfillment = "delivery" | "pickup";
 
 export type DietMode = "all" | "veg" | "vegan";
 
 export type BankId = "hdfc" | "icici" | "sbi" | "amazonpay" | "onecard";
 
+export interface Locality {
+  id: string;
+  /** Full display form, e.g. "Dwarka Sector 6, New Delhi". */
+  name: string;
+  area: string;
+  city: string;
+}
+
 export interface DeliveryModel {
-  /** Flat fare covering everything up to `includedKm`. */
   baseFare: number;
   includedKm: number;
-  /** Charged per kilometre beyond `includedKm`. */
   perKm: number;
-  /** Riders' fees are capped in practice; beyond this the app eats the rest. */
   cap: number;
 }
 
 export interface SurgeModel {
-  /** Peak/rain multiplier applied to the distance-derived fare. */
   deliveryMultiplier: number;
-  /** Flat "high demand" surcharge stacked on top. */
   extraFee: number;
 }
 
 export interface Membership {
   id: string;
   name: string;
-  /** Free delivery only kicks in above this cart value… */
   freeDeliveryMinOrder: number;
-  /** …and only within this radius. */
   freeDeliveryMaxKm: number;
-  /** Member-only discount on the food line, at participating restaurants. */
   discountPercent: number;
   discountCap: number;
   monthlyCost: number;
 }
 
-export interface Platform {
-  id: PlatformId;
+export interface Channel {
+  id: ChannelId;
   name: string;
-  /** What the user is actually ordering through, e.g. "Paytm / Magicpin". */
+  /** What you are actually ordering through, e.g. "Paytm / Magicpin". */
   channel: string;
   blurb: string;
-  /** Hex used for the column accent. Kept out of Tailwind classes so the three
-   *  brand colours stay in one place instead of scattered through markup. */
   color: string;
-  /** Same hue at low alpha, for column tints and chips. */
   tint: string;
-  /** Commission the platform adds on top of the restaurant's own price. This is
-   *  the single biggest driver of the difference between the columns. */
+  /** Markup added on top of the restaurant's counter price. Zero for pickup —
+   *  that is the entire reason pickup wins as often as it does. */
   commission: number;
   platformFee: number;
-  /** Charged once per order, on top of the restaurant's packaging cost. */
   handlingFee: number;
-  /** Platforms let restaurants set packaging fees, but clamp them differently. */
   packagingMultiplier: number;
   delivery: DeliveryModel;
   surge: SurgeModel;
   membership: Membership | null;
-  /** Whether a member discount and a coupon can both apply to one order. On
-   *  Swiggy and Zomato they cannot — the engine takes whichever is worth more. */
+  /** Whether a member discount and a coupon can both apply to one order. */
   stackMemberWithCoupon: boolean;
+  /** False for pickup: there is no rider, so no fulfillment choice to make. */
+  supportsDelivery: boolean;
 }
 
-export interface MenuItem {
+/**
+ * A dish as a *concept*, not as one restaurant's menu line. This is what makes
+ * "1 kadhai paneer + 3 tandoori roti" comparable across five kitchens that each
+ * spell and price it differently — the hard problem in a meta-aggregator, and
+ * the reason v1's free-text item names could not answer this question.
+ */
+export interface Dish {
   id: string;
   name: string;
+  /** Spellings and near-synonyms people actually type or that menus use. */
+  aliases: string[];
   description: string;
-  /** The restaurant's own price, before any platform commission. */
-  basePrice: number;
-  veg: boolean;
-  /** Vegan is a strict subset of veg — no paneer, ghee, curd, cheese, cream. */
-  vegan: boolean;
   category: string;
-  /** Restaurant-set packaging cost per unit, before the platform's multiplier. */
+  veg: boolean;
+  vegan: boolean;
+  /** Typical counter price at a mid-tier kitchen — each restaurant scales or
+   *  overrides this. Never shown directly; it is the anchor, not a price. */
+  counterPrice: number;
+  /** Per-unit container cost, before the channel's packaging multiplier. */
   packagingCost: number;
   popular?: boolean;
 }
 
+/** One restaurant's listing of one canonical dish. */
+export interface MenuEntry {
+  dishId: string;
+  /** Set when this kitchen's price genuinely departs from its tier — a
+   *  speciality it is known for, or a loss-leader. */
+  priceOverride?: number;
+  /** Set when this kitchen packs the dish unusually (clay handi, steel tin). */
+  packagingOverride?: number;
+}
+
 export interface RestaurantOffer {
-  platform: PlatformId;
+  channel: ChannelId;
   label: string;
   percent: number;
   cap: number;
@@ -95,49 +119,51 @@ export interface RestaurantOffer {
 export interface Restaurant {
   id: string;
   name: string;
+  localityId: string;
   tagline: string;
   cuisines: string[];
-  city: string;
-  area: string;
   pureVeg: boolean;
   rating: number;
   prepMinutes: number;
-  /** Not every kitchen is on every network — the ONDC catalogue is thinner. */
-  listedOn: PlatformId[];
-  /** Deviation from the platform's headline commission, in percentage points of
-   *  markup. A chain with negotiating power pays less than a single outlet. */
-  markupAdjustment: Partial<Record<PlatformId, number>>;
-  /** Platforms where this restaurant participates in the membership programme. */
-  memberPartner: PlatformId[];
+  /** Distance from the locality centre — drives both the delivery fare and
+   *  whether pickup is a realistic suggestion. */
+  distanceKm: number;
+  /** Multiplier on each dish's canonical counter price. A value dhaba sits
+   *  below 1, a hotel restaurant well above it. */
+  priceTier: number;
+  /** Which channels list this kitchen. `pickup` is always available — you can
+   *  always walk in — which is exactly why it is the reliable fallback. */
+  listedOn: ChannelId[];
+  /** Deviation from the channel's headline commission. Chains negotiate down. */
+  markupAdjustment: Partial<Record<ChannelId, number>>;
+  memberPartner: ChannelId[];
   offers: RestaurantOffer[];
-  items: MenuItem[];
+  menu: MenuEntry[];
 }
 
 export interface Coupon {
   code: string;
-  platform: PlatformId;
+  channel: ChannelId;
   label: string;
   percent: number;
   cap: number;
   minOrder: number;
-  /** Shown as a caveat in the UI; still applied, since the user knows whether
-   *  they qualify better than we do. */
   caveat?: string;
 }
 
 export interface BankOffer {
   id: string;
   bank: BankId;
-  platform: PlatformId;
+  channel: ChannelId;
   label: string;
-  /** Percent-of-payable offers use `percent` + `cap`; flat ones use `amount`. */
   percent?: number;
   cap?: number;
   amount?: number;
   minOrder: number;
 }
 
+/** A line in the meal the user is building — canonical, not restaurant-bound. */
 export interface CartLine {
-  itemId: string;
+  dishId: string;
   quantity: number;
 }

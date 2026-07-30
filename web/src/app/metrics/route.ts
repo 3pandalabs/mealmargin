@@ -1,5 +1,7 @@
+import { CHANNELS } from "@/lib/channels";
+import { DISHES } from "@/lib/dishes";
+import { LOCALITIES } from "@/lib/localities";
 import { BANK_OFFERS, COUPONS } from "@/lib/offers";
-import { PLATFORMS } from "@/lib/platforms";
 import { RESTAURANTS } from "@/lib/restaurants";
 
 // Ops-only endpoint, scraped by the admin page (admin.3pandalabs.com). The
@@ -68,7 +70,7 @@ export async function GET(request: Request): Promise<Response> {
     );
   }
 
-  const dishes = RESTAURANTS.flatMap((restaurant) => restaurant.items);
+  const menuEntries = RESTAURANTS.reduce((sum, restaurant) => sum + restaurant.menu.length, 0);
 
   return Response.json(
     {
@@ -78,11 +80,13 @@ export async function GET(request: Request): Promise<Response> {
       // The catalogue is this app's entire state, so its size is the only
       // "count" that means anything. It changes on deploy, not on use.
       counts: {
+        localities: LOCALITIES.length,
         restaurants: RESTAURANTS.length,
-        dishes: dishes.length,
-        vegDishes: dishes.filter((dish) => dish.veg).length,
-        veganDishes: dishes.filter((dish) => dish.vegan).length,
-        platforms: PLATFORMS.length,
+        dishes: DISHES.length,
+        vegDishes: DISHES.filter((dish) => dish.veg).length,
+        veganDishes: DISHES.filter((dish) => dish.vegan).length,
+        menuEntries,
+        channels: CHANNELS.length,
         coupons: COUPONS.length,
         bankOffers: BANK_OFFERS.length,
       },

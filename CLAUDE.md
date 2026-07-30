@@ -31,15 +31,63 @@ If a backend is ever added — saved carts, real price feeds, accounts — follo
 RsvpVault's shape (`api/` Fastify + Drizzle on Coolify), and copy
 `api/src/metrics/collector.ts` verbatim at that point.
 
+## v2 (2026-07-30) turned the question around
+
+v1 asked "given this restaurant, which app is cheapest?". v2 asks the question
+people actually have: **"I am here, I want this meal — where and how do I buy it
+for the least money?"** Three consequences run through the whole codebase:
+
+- **Locality first.** `lib/localities.ts` is the entry point; every kitchen
+  shown, every delivery fare and every walk time derives from it. There is no
+  global distance slider any more — each restaurant has its own `distanceKm`
+  from the locality centre.
+- **Dishes are canonical.** `lib/dishes.ts` holds dishes as *concepts* with
+  `aliases`, and restaurants reference them by id. This is what lets one basket
+  be priced at five kitchens; a cart of free-text menu lines could only ever be
+  compared against itself. Deciding that "Kadai/Kadhai/Karahi Paneer" are one
+  orderable thing is the genuinely hard problem in a meta-aggregator — the fee
+  arithmetic is the easy part.
+- **Pickup is a fourth channel, not a footnote.** Commission 0, platform fee 0,
+  no rider. It wins most structural comparisons, which is the finding the app
+  exists to surface. Packaging is deliberately *not* zeroed — takeaway still
+  needs containers, and zeroing it would overstate the saving.
+
+Only kitchens serving **every** dish in the basket are compared. Splitting one
+meal across two restaurants means paying two sets of fees, so a partial match is
+never the cheaper answer and is not shown as one.
+
+### The promo toggle is a correctness feature, not a preference
+
+`usePromos` defaults on but exists because auto-applying the best coupon to
+every order is **not a neutral default**. A 60%-off-capped code can make an app
+beat the counter, and most repeat orders do not have one. With promos off you
+get the structural comparison — commission, fees, rider — and pickup wins by
+6-31% depending on the kitchen, 36% on a ₹250 basket. Both views are true; the
+app shows which one you are looking at, and when a promo is what flips the
+answer it says so rather than rendering a negative saving.
+
 ## The dataset is the product, so treat it as such
 
-`web/src/lib/platforms.ts`, `restaurants.ts` and `offers.ts` are **modelled, not
-scraped**. Commission rates, platform fees, packaging, surge multipliers,
-coupons and bank offers are representative of publicly reported structures —
-~25-30% commission on Swiggy/Zomato against 3-5% on ONDC, 5% GST on food and 18%
-on fees. They are not live and are not claimed to be. The disclaimer in
-`web/src/components/Footer.tsx` says so, along with the trademark notice; if the
-data ever does go live, that paragraph is the first thing to change.
+`web/src/lib/channels.ts`, `dishes.ts`, `restaurants.ts` and `offers.ts` are
+**modelled, not scraped**. Commission rates, platform fees, packaging, surge
+multipliers, coupons and bank offers are representative of publicly reported
+structures — ~25-30% commission on Swiggy/Zomato against 3-5% on ONDC and 0% at
+the counter, 5% GST on food and 18% on fees. They are not live and are not
+claimed to be. The disclaimer in `web/src/components/Footer.tsx` says so, along
+with the trademark notice; if the data ever does go live, that paragraph is the
+first thing to change.
+
+**Restaurant names are invented on purpose.** They are generic-sounding local
+names, never national chains, because every price here is modelled: attaching a
+made-up price to a recognisable brand would read as a factual claim about that
+business. The *archetypes* are real (value bhojnalaya, sweets-and-thali house,
+dhaba, hotel restaurant, modern cafe) and that is what drives the price spread
+via `priceTier`. Keep it that way when adding kitchens.
+
+Getting real prices, if that ever comes up: Swiggy and Zomato have no public API
+and scraping them is against their terms; **ONDC is the only one with a
+sanctioned path** (the Beckn protocol, as a registered Buyer App), and that
+needs a backend this app deliberately does not have.
 
 Keep the engine (`pricing.ts`, `recommend.ts`) pure: no React, no I/O, no
 `Date.now()` in the maths. That is what lets the crossover sweep in
