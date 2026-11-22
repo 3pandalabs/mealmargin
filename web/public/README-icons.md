@@ -2,8 +2,9 @@
 
 `icon.png` (512), `icon-192.png`, `apple-icon.png` (180) and `favicon-32.png`
 are all crops of one source tile, added 2026-07-30. `icon-192.png` doubles as
-the header mark in `src/components/Header.tsx`, and `icon.png` is the Open Graph
-image.
+the header mark in `src/components/Header.tsx`. The Open Graph / Twitter image is
+`og.png` (1200x630, since 2026-11-22), copied from `3pandalabs/brand`
+`og/out/mealmargin.png`; per the brand rules it is never a bare icon.
 
 Two things worth knowing before regenerating them:
 

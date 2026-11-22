@@ -3,20 +3,32 @@ import "./globals.css";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://mealmargin.3pandalabs.com";
 
+const TITLE = "MealMargin — The same food, three prices | by 3PandaLabs";
+const DESCRIPTION =
+  "Compare what one identical order actually costs on Swiggy, Zomato and the ONDC network, fee by fee, with memberships, coupons and bank offers applied automatically.";
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: "MealMargin — the same food, three prices",
-  description:
-    "Compare what one identical order actually costs on Swiggy, Zomato and the ONDC network, fee by fee, with memberships, coupons and bank offers applied automatically.",
+  // Titles and share tags follow the brand consistency rules (3pandalabs/brand
+  // brand.md, 2026-11-22): home = "<App> — <line> | by 3PandaLabs", the og
+  // description reuses the meta description, og:image is the 1200x630 brand
+  // card at /og.png (never a bare icon).
+  title: TITLE,
+  description: DESCRIPTION,
   openGraph: {
-    title: "MealMargin — the same food, three prices",
-    description:
-      "An itemised, side-by-side checkout comparison across Swiggy, Zomato and ONDC — commission markup, platform fee, packaging, surge delivery, GST, coupons and card offers.",
+    title: TITLE,
+    description: DESCRIPTION,
     url: siteUrl,
-    siteName: "MealMargin",
+    siteName: "MealMargin by 3PandaLabs",
     locale: "en_IN",
     type: "website",
-    images: [{ url: "/icon.png", width: 512, height: 512, alt: "MealMargin" }],
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "MealMargin — The same food, three prices. By 3PandaLabs." }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: ["/og.png"],
   },
   // All four are crops of the same source tile (see public/README-icons.md).
   // Declared explicitly rather than relying on file-convention icons, because

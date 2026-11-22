@@ -16,6 +16,8 @@ export function Footer() {
           <span>&copy; 3PandaLabs LLC, USA.</span>
           <span>All rights reserved.</span>
         </div>
+        {/* Brand tagline, its own small muted line (3pandalabs/brand footer/footer.css). */}
+        <p className="text-xs text-muted">Built by pandas. Loved by people.</p>
       </div>
     </footer>
   );
