@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function Footer() {
   return (
     <footer className="mt-12 border-t border-line px-4 py-8 sm:px-6">
@@ -14,6 +16,14 @@ export function Footer() {
         </p>
         <div className="flex flex-wrap justify-between gap-2 text-sm text-muted">
           <span>&copy; 3PandaLabs LLC, USA.</span>
+          <nav aria-label="Legal" className="flex gap-4">
+            <Link href="/privacy" className="hover:text-ink hover:underline">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-ink hover:underline">
+              Terms
+            </Link>
+          </nav>
           <span>All rights reserved.</span>
         </div>
         {/* Brand tagline, its own small muted line (3pandalabs/brand footer/footer.css). */}
