@@ -1,3 +1,5 @@
+import { FollowUs } from "@/components/FollowUs";
+
 export function Footer() {
   return (
     <footer className="mt-12 border-t border-line px-4 py-8 sm:px-6">
@@ -13,6 +15,7 @@ export function Footer() {
           respective owners; MealMargin is not affiliated with any of them.
         </p>
         <div className="flex flex-wrap justify-between gap-2 text-sm text-muted">
+          <FollowUs />
           <span>&copy; 3PandaLabs LLC, USA.</span>
           <span>All rights reserved.</span>
         </div>
