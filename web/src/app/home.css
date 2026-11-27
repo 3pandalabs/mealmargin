@@ -1,0 +1,212 @@
+/* Home page chrome only (imported by app/page.tsx). Everything is prefixed
+   `mm-` so none of it can leak into the comparison tool below it. Motion is
+   decoration: every animation is switched off under prefers-reduced-motion at
+   the bottom, which leaves the first example scene showing, fully drawn. */
+
+.mm-display {
+  letter-spacing: -0.035em;
+}
+
+/* Green-to-amber shimmer on the accent words — the backdrop's own colours. */
+.mm-shimmer {
+  background: linear-gradient(100deg, #2f7a4f 0%, #10b981 30%, #f59e0b 62%, #2f7a4f 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: mm-shimmer 7s ease-in-out infinite;
+}
+@media (prefers-color-scheme: dark) {
+  .mm-shimmer {
+    background-image: linear-gradient(100deg, #4fbf7d 0%, #6ee7b7 30%, #fbbf24 62%, #4fbf7d 100%);
+  }
+}
+@keyframes mm-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Hand-drawn underline under the punchline. */
+.mm-scribble { position: relative; display: inline-block; }
+.mm-scribble svg {
+  position: absolute; left: 0; right: 0; bottom: -0.14em; width: 100%; height: 0.3em; overflow: visible;
+}
+.mm-scribble path {
+  stroke-dasharray: 420; stroke-dashoffset: 420;
+  animation: mm-draw 1.3s 0.4s cubic-bezier(.65,0,.35,1) forwards;
+}
+@keyframes mm-draw { to { stroke-dashoffset: 0; } }
+
+.mm-live { animation: mm-live 1.4s ease-in-out infinite; }
+@keyframes mm-live { 50% { opacity: .25; } }
+
+/* ---------- Hero receipt race ---------- */
+.mm-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.mm-race {
+  box-shadow: 0 30px 80px -30px rgba(16, 80, 48, .45), 0 0 0 1px var(--border);
+  animation: mm-float 8s ease-in-out infinite;
+}
+@keyframes mm-float {
+  0%, 100% { transform: translateY(0) rotate(-0.6deg); }
+  50% { transform: translateY(-10px) rotate(0.4deg); }
+}
+
+/* Three scenes share one 21s cycle, each shifted by a third. */
+.mm-scene {
+  opacity: 0;
+  animation: mm-scene 21s linear infinite;
+  animation-delay: var(--scene-delay, 0s);
+}
+@keyframes mm-scene {
+  0% { opacity: 0; transform: translateY(8px); }
+  2% { opacity: 1; transform: translateY(0); }
+  31% { opacity: 1; transform: translateY(0); }
+  33.3% { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 0; }
+}
+.mm-scene:not(:first-child) { position: absolute; inset: 0; }
+
+/* Each bar grows when its scene comes in, staggered by its row. */
+.mm-bar {
+  transform-origin: left;
+  transform: scaleX(0);
+  animation: mm-bar 21s cubic-bezier(.2,.8,.2,1) infinite;
+  animation-delay: calc(var(--scene-delay, 0s) + var(--row, 0) * 0.18s);
+}
+@keyframes mm-bar {
+  0% { transform: scaleX(0); }
+  6% { transform: scaleX(1); }
+  33.3% { transform: scaleX(1); }
+  33.4%, 100% { transform: scaleX(0); }
+}
+
+/* The winner's badge pops once the bars have landed. */
+.mm-win {
+  opacity: 0;
+  animation: mm-win 21s ease-out infinite;
+  animation-delay: var(--scene-delay, 0s);
+}
+@keyframes mm-win {
+  0%, 7% { opacity: 0; transform: scale(.6); }
+  9% { opacity: 1; transform: scale(1.08); }
+  10.5% { transform: scale(1); }
+  31% { opacity: 1; transform: scale(1); }
+  33.3%, 100% { opacity: 0; }
+}
+
+/* Progress strip across the bottom of the card. */
+.mm-progress {
+  transform-origin: left;
+  animation: mm-progress 21s linear infinite;
+  animation-delay: var(--scene-delay, 0s);
+  opacity: 0;
+}
+@keyframes mm-progress {
+  0% { opacity: 1; transform: scaleX(0); }
+  33.3% { opacity: 1; transform: scaleX(1); }
+  33.31%, 100% { opacity: 0; }
+}
+
+/* Floating fee chips around the card — the things pickup does not pay. */
+.mm-chip {
+  animation: mm-chip 6s ease-in-out infinite;
+  animation-delay: var(--chip-delay, 0s);
+}
+@keyframes mm-chip {
+  0%, 100% { transform: translateY(0) rotate(var(--tilt, 0deg)); }
+  50% { transform: translateY(-9px) rotate(var(--tilt, 0deg)); }
+}
+
+/* ---------- Marquee ---------- */
+.mm-marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.mm-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: mm-marquee 38s linear infinite;
+}
+@keyframes mm-marquee { to { transform: translateX(-50%); } }
+
+/* ---------- How it works ---------- */
+.mm-dash {
+  background-image: linear-gradient(90deg, var(--accent) 50%, transparent 50%);
+  background-size: 14px 2px;
+  opacity: .5;
+  animation: mm-dash 1.2s linear infinite;
+}
+@keyframes mm-dash { to { background-position: 14px 0; } }
+
+.mm-tile { transition: transform .25s ease, box-shadow .25s ease; }
+.mm-tile:hover { transform: translateY(-4px); box-shadow: 0 20px 50px -25px rgba(16, 80, 48, .5); }
+
+/* ---------- Where the money goes ---------- */
+.mm-stack {
+  transform-origin: left;
+  animation: mm-stack 1.4s cubic-bezier(.2,.8,.2,1) both;
+  animation-delay: var(--row, 0s);
+}
+@keyframes mm-stack { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ---------- Closing CTA ---------- */
+.mm-glow {
+  background:
+    radial-gradient(60% 80% at 20% 0%, rgba(16, 185, 129, .22), transparent 70%),
+    radial-gradient(50% 70% at 90% 100%, rgba(245, 158, 11, .2), transparent 70%),
+    var(--card);
+}
+
+.mm-btn {
+  position: relative;
+  overflow: hidden;
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: 0 12px 36px -12px color-mix(in srgb, var(--accent) 80%, transparent);
+  transition: transform .2s ease, filter .2s ease;
+}
+.mm-btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
+.mm-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.35) 50%, transparent 70%);
+  transform: translateX(-120%);
+  animation: mm-shine 4.5s ease-in-out infinite;
+}
+@keyframes mm-shine {
+  0%, 60% { transform: translateX(-120%); }
+  85%, 100% { transform: translateX(120%); }
+}
+.mm-btn:focus-visible, .mm-ghost:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 2px;
+}
+
+html:has(.mm-home) { scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.mm-home) { scroll-behavior: auto; }
+  .mm-shimmer, .mm-live, .mm-race, .mm-chip, .mm-marquee-track, .mm-dash,
+  .mm-btn::after, .mm-scene, .mm-bar, .mm-win, .mm-progress, .mm-stack {
+    animation: none !important;
+  }
+  .mm-scribble path { animation: none; stroke-dashoffset: 0; }
+  .mm-bar, .mm-stack { transform: none; }
+  .mm-scene[data-first], .mm-win[data-first] { opacity: 1; }
+  .mm-tile, .mm-tile:hover { transition: none; transform: none; }
+  .mm-marquee-track { flex-wrap: wrap; width: auto; justify-content: center; }
+  .mm-marquee-track > [aria-hidden] { display: none; }
+}
+
+/* The tool's two-column grid is single-column below lg, where a grid item's
+   default min-width:auto let the dish builder grow to its widest line and push
+   the page into horizontal scroll at phone width. */
+.mm-home #compare .grid > * { min-width: 0; }
